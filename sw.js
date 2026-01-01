@@ -1,10 +1,9 @@
 
-const CACHE_NAME = 'bible-365-v1';
+const CACHE_NAME = 'bible-365-v2';
 const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  'https://cdn.tailwindcss.com'
+  '/',
+  '/index.html',
+  '/manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -13,10 +12,24 @@ self.addEventListener('install', (event) => {
   );
 });
 
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+      return response || fetch(event.request).catch(() => {
+        if (event.request.mode === 'navigate') {
+          return caches.match('/');
+        }
+      });
     })
   );
 });
