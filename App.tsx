@@ -1,12 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getReadingForDay, getDayOfYear, getDateForDay } from './services/biblePlan';
 import { DailyReadingPlan } from './types';
 import PassageCard from './components/PassageCard';
+
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 const App: React.FC = () => {
   const [currentDay, setCurrentDay] = useState<number>(getDayOfYear());
   const [plan, setPlan] = useState<DailyReadingPlan | null>(null);
   const [showSelector, setShowSelector] = useState(false);
+  
+  // State for the visual calendar picker
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth());
   
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const hours = new Date().getHours();
@@ -15,40 +25,43 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setPlan(getReadingForDay(currentDay));
+    
+    // Sync the calendar picker month with the current selected day
+    // We reverse engineer the month from the day number
+    const date = new Date(2026, 0, currentDay); // 2026 is our non-leap reference year
+    setSelectedMonthIndex(date.getMonth());
   }, [currentDay]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   const goToPrev = () => setCurrentDay(prev => Math.max(1, prev - 1));
   const goToNext = () => setCurrentDay(prev => Math.min(365, prev + 1));
+  
   const goToToday = () => {
-    setCurrentDay(getDayOfYear());
+    const today = getDayOfYear();
+    setCurrentDay(today);
+    setSelectedMonthIndex(new Date().getMonth());
     setShowSelector(false);
   };
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedDate = new Date(e.target.value);
-    if (!isNaN(selectedDate.getTime())) {
-      setCurrentDay(getDayOfYear(selectedDate));
-      setShowSelector(false);
-    }
-  };
-
-  const handleDayNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const day = parseInt(e.target.value);
-    if (!isNaN(day) && day >= 1 && day <= 365) {
-      setCurrentDay(day);
-      // We do not auto-close here so the user can finish typing numbers like "145"
-    }
+  const handleDayClick = (dayOfMonth: number) => {
+    // Calculate day of year based on 2026 (non-leap)
+    const date = new Date(2026, selectedMonthIndex, dayOfMonth);
+    const dayOfYear = getDayOfYear(date);
+    setCurrentDay(dayOfYear);
+    setShowSelector(false);
   };
 
   // Uses _blank to reliably open external sites like BibleGateway that block iframes.
-  // This is the safest method for Android PWAs.
   const openLink = (url: string) => {
     window.open(url, '_blank');
   };
 
   const selectedDayDate = getDateForDay(currentDay);
+
+  // Determine current day in month for highlighting
+  const currentDateObj = new Date(2026, 0, currentDay);
+  const activeDayInMonth = currentDateObj.getMonth() === selectedMonthIndex ? currentDateObj.getDate() : -1;
 
   return (
     <div className={`min-h-screen transition-colors duration-500 font-sans pb-32 ${isDarkMode ? 'bg-[#121212] text-slate-100' : 'bg-[#FDFCF8] text-slate-900'}`}>
@@ -56,12 +69,15 @@ const App: React.FC = () => {
       {/* Header */}
       <header className={`pt-12 pb-4 px-6 sticky top-0 z-40 shadow-sm border-b transition-colors duration-500 ${isDarkMode ? 'bg-[#1A1A1A] border-slate-800 shadow-black/20' : 'bg-white border-slate-100'}`}>
         <div className="max-w-lg mx-auto flex justify-between items-end mb-4">
-          <div>
+          <div 
+            onClick={() => setShowSelector(!showSelector)} 
+            className="cursor-pointer active:opacity-60 transition-opacity"
+          >
             <h1 className={`text-xs font-bold tracking-[0.2em] uppercase mb-2 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
               {selectedDayDate}
             </h1>
             <h2 className={`text-3xl font-serif font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              {plan?.label}
+              {plan?.label} <span className="text-sm align-middle opacity-40 ml-1">▼</span>
             </h2>
           </div>
           
@@ -96,38 +112,70 @@ const App: React.FC = () => {
         {showSelector && (
           <div className={`max-w-lg mx-auto mt-4 p-4 rounded-xl border flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300 ${isDarkMode ? 'bg-[#252525] border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
             
-            {/* Date Selection */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] font-bold uppercase tracking-widest opacity-60">Select Date</label>
+            <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Select Date</span>
                 <button 
                   onClick={goToToday}
                   className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full ${isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}
                 >
                   Go to Today
                 </button>
+            </div>
+
+            {/* Custom Visual Calendar */}
+            <div className="flex flex-col gap-4 select-none">
+              
+              {/* Month Scroller */}
+              <div className="flex overflow-x-auto gap-2 pb-2 -mx-2 px-2 scrollbar-hide snap-x">
+                {MONTHS.map((m, idx) => (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedMonthIndex(idx)}
+                    className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors snap-center ${
+                      selectedMonthIndex === idx 
+                        ? (isDarkMode ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-200')
+                        : (isDarkMode ? 'bg-[#333] text-slate-400 hover:bg-[#444]' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50')
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
               </div>
-              <input type="date" onChange={handleDateChange} className={`w-full p-3 rounded-lg border text-sm outline-none appearance-none ${isDarkMode ? 'bg-[#1A1A1A] border-slate-600 text-white' : 'bg-white border-slate-200'}`} />
+
+              {/* Day Grid */}
+              <div className="grid grid-cols-7 gap-2">
+                {Array.from({ length: DAYS_IN_MONTH[selectedMonthIndex] }, (_, i) => i + 1).map((day) => (
+                  <button
+                    key={day}
+                    onClick={() => handleDayClick(day)}
+                    className={`aspect-square rounded-full flex items-center justify-center text-sm font-medium transition-all active:scale-90 ${
+                      activeDayInMonth === day
+                        ? (isDarkMode ? 'bg-indigo-500 text-white ring-2 ring-indigo-400 ring-offset-2 ring-offset-[#252525]' : 'bg-indigo-600 text-white ring-2 ring-indigo-500 ring-offset-2')
+                        : (isDarkMode ? 'text-slate-300 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100')
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Divider */}
-            <div className="relative flex py-1 items-center">
-                <div className={`flex-grow border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}></div>
-                <span className="flex-shrink-0 mx-4 text-[10px] font-bold uppercase tracking-widest opacity-40">OR</span>
-                <div className={`flex-grow border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}></div>
-            </div>
-
-            {/* Day Number Selection */}
-            <div className="flex flex-col gap-2">
-               <label className="text-[10px] font-bold uppercase tracking-widest opacity-60">Enter Day Number (1-365)</label>
-               <input 
-                  type="number" 
-                  min="1" 
-                  max="365" 
-                  placeholder={currentDay.toString()} 
-                  onChange={handleDayNumberChange} 
-                  className={`w-full p-3 rounded-lg border text-sm outline-none appearance-none ${isDarkMode ? 'bg-[#1A1A1A] border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-200 placeholder-slate-400'}`} 
-               />
+            {/* Manual Day Input (Bottom Fallback) */}
+            <div className={`mt-2 pt-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+               <div className="flex items-center gap-3">
+                 <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 whitespace-nowrap">Or Day #</span>
+                 <input 
+                    type="number" 
+                    min="1" 
+                    max="365" 
+                    value={currentDay}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (!isNaN(val) && val >= 1 && val <= 365) setCurrentDay(val);
+                    }}
+                    className={`w-full p-2 rounded-lg border text-sm text-center outline-none ${isDarkMode ? 'bg-[#1A1A1A] border-slate-600 text-white' : 'bg-white border-slate-200'}`} 
+                 />
+               </div>
             </div>
 
           </div>
@@ -167,6 +215,13 @@ const App: React.FC = () => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700;900&display=swap');
         body { font-family: 'Crimson Pro', serif; }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
       `}</style>
     </div>
   );
