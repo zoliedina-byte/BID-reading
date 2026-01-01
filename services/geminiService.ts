@@ -1,8 +1,10 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { DailyData, Passage } from "../types";
+import { DailyData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Note: This service is available if you want to add AI reflections later.
+// It requires an API_KEY in your environment variables.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 export const fetchDailyPassages = async (): Promise<DailyData> => {
   const today = new Date().toLocaleDateString('en-US', { 
@@ -11,12 +13,16 @@ export const fetchDailyPassages = async (): Promise<DailyData> => {
     day: 'numeric' 
   });
 
+  // If no API key is provided, we return an empty state gracefully
+  if (!process.env.API_KEY) {
+    return { date: today, passages: [] };
+  }
+
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate 3 daily reflective passages for ${today}. 
     Each passage should be meaningful, around 80-120 words. 
-    Include one high-quality educational or literary link (like Wikipedia, Project Gutenberg, or reputable news) relevant to the passage's topic.
-    Vary the categories: Wisdom, Nature, History, or Science.`,
+    Include one high-quality educational or literary link relevant to the topic.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -44,7 +50,6 @@ export const fetchDailyPassages = async (): Promise<DailyData> => {
   });
 
   try {
-    // Correctly extract text from response and trim as per guidelines
     const jsonStr = response.text?.trim() || "{}";
     const data = JSON.parse(jsonStr);
     return {
@@ -53,6 +58,6 @@ export const fetchDailyPassages = async (): Promise<DailyData> => {
     };
   } catch (error) {
     console.error("Failed to parse Gemini response:", error);
-    throw new Error("Invalid response format");
+    return { date: today, passages: [] };
   }
 };
